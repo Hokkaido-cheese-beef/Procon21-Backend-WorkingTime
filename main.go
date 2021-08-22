@@ -68,20 +68,27 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			StatusCode: 500,
 		}, err
 	}
-
+//検索条件にtimestampを入れりと怒られるので外法を使います
 	getParamPerson := &dynamodb.QueryInput{
 		TableName: aws.String("userActivities"),
 		ExpressionAttributeNames: map[string]*string{
 			"#ID": aws.String("userID"), // alias付けれたりする
+		//	"#Status":aws.String("status"),
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":userID": {
 				S: aws.String(requestItem.UserID),
 			},
+			/*
+			":status":{
+				N: aws.String("1"),
+			},
+
+			 */
 		},
 		KeyConditionExpression: aws.String("#ID = :userID"), // 検索条件
 		ScanIndexForward:       aws.Bool(false),             // ソートキーのソート順（指定しないと昇順）
-		Limit:                  aws.Int64(1),                // 最新の一件
+		Limit:                  aws.Int64(50),                // 修正します
 	}
 	// 検索
 	getData, err := svc.Query(getParamPerson)
@@ -94,16 +101,30 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			err
 	}
 
+	// 結果を構造体にパース
+	items := make([]*Item, 0)
+
+	err = dynamodbattribute.UnmarshalListOfMaps(getData.Items, &items)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			Body:       err.Error(),
+			StatusCode: 500,
+		}, err
+	}
+
+	/*
 	userActivity := []Item{}
 	err = dynamodbattribute.UnmarshalListOfMaps(getData.Items, &userActivity)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
 
+
+	 */
 	insertData := Item{
 		UserID:    requestItem.UserID,
 		Timestamp: requestItem.Timestamp,
-		Status:    requestItem.Status,
+		Status:    4,
 	}
 
 	err = Put(svc, insertData)
@@ -116,7 +137,15 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			err
 	}
 
-	workingTime := WorkingTime(userActivity[0].Timestamp, requestItem.Timestamp)
+	var workingTime int64
+
+	for _,v := range items{
+		if(v.Status == 1 ){
+			workingTime = WorkingTime(v.Timestamp, requestItem.Timestamp)
+		}
+	}
+
+	//workingTime := WorkingTime(userActivity[0].Timestamp, requestItem.Timestamp)
 
 	responseData := Response{
 		WorkingTime: workingTime,
