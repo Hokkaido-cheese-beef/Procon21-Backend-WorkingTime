@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"log"
+	"strconv"
 )
 
 type Item struct {
@@ -69,29 +70,26 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		}, err
 	}
 //検索条件にtimestampを入れりと怒られるので外法を使います
-	getParamPerson := &dynamodb.QueryInput{
+	input := &dynamodb.QueryInput{
 		TableName: aws.String("userActivities"),
 		ExpressionAttributeNames: map[string]*string{
-			"#ID": aws.String("userID"), // alias付けれたりする
-		//	"#Status":aws.String("status"),
+			"#userID":   aws.String("userID"), // alias付けれたりする
+			"#timestamp": aws.String("timestamp"),   // 予約語はそのままだと怒られるので置換する
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":userID": {
+			":userID": { // :を付けるのがセオリーのようです
 				S: aws.String(requestItem.UserID),
 			},
-			/*
-			":status":{
-				N: aws.String("1"),
+			":timestamp": { // :を付けるのがセオリーのようです
+				N: aws.String(strconv.Itoa(int(requestItem.Timestamp)-86400)),
 			},
-
-			 */
 		},
-		KeyConditionExpression: aws.String("#ID = :userID"), // 検索条件
-		ScanIndexForward:       aws.Bool(false),             // ソートキーのソート順（指定しないと昇順）
-		Limit:                  aws.Int64(50),                // 修正します
+		KeyConditionExpression: aws.String("#userID = :userID AND #timestamp > :timestamp"),         // 検索条件
+		//ProjectionExpression:   aws.String("#userID, #timestamp, #Name"), // 取得カラム
+		ScanIndexForward:       aws.Bool(false),                 // ソートキーのソート順（指定しないと昇順）
 	}
-	// 検索
-	getData, err := svc.Query(getParamPerson)
+
+	getData, err := svc.Query(input)
 	if err != nil {
 		fmt.Println("[Query Error]", err)
 		return events.APIGatewayProxyResponse{
@@ -142,6 +140,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	for _,v := range items{
 		if(v.Status == 1 ){
 			workingTime = WorkingTime(v.Timestamp, requestItem.Timestamp)
+			break;
 		}
 	}
 
